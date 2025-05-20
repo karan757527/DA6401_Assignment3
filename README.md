@@ -11,7 +11,7 @@ Both models employ Long Short-Term Memory (LSTM) layers and are trained and eval
 
 The project integrates **Weights & Biases (wandb)** for extensive experiment tracking, hyperparameter tuning, and visualization of training metrics. Detailed training logs, model comparisons, and performance insights are available via the wandb dashboard.
 
-- **Weights & Biases Report:** [View Detailed Experiment Report](YOUR_WANDB_REPORT_LINK_HERE)
+- **Weights & Biases Report:** [View Detailed Experiment Report](https://wandb.ai/cs24m021-iit-madras/DA6401_A3/reports/Assignment-3--VmlldzoxMjg0MzgwNg?accessToken=lhh5nl2o7rdbjftu9gw8l4wl3pwvdv9hz3ce6s42wz4z6w5h8uuvlfa4a0hdgces)
 
 
 ---
