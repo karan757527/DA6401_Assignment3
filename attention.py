@@ -276,7 +276,6 @@ def generate_predictions_csv(model, vocab, test_data, csv_path="predictions.csv"
 
 class Encoder(nn.Module):
     def __init__(self, inp_dim, emb_dim, hidden_size, num_layers, bidirectional, cell_type, dropout):
-
         '''
             Initializes the Encoder class with specified parameters.
 
@@ -292,27 +291,51 @@ class Encoder(nn.Module):
             Returns:
             - None
         '''
-
-        super(Encoder,self).__init__()
-
-        self.inp_dim = inp_dim
-        self.embedding = nn.Embedding(inp_dim, emb_dim)
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-        self.bidirectional = bidirectional
-        self.cell_type = cell_type
-        self.dropout = nn.Dropout(dropout)
+        # Call parent constructor
+        super().__init__()
         
-        if self.cell_type == "LSTM":
-            self.rnn = nn.LSTM(emb_dim,hidden_size,num_layers,bidirectional=self.bidirectional,dropout=(dropout if num_layers>1 else 0))
-        elif self.cell_type == "RNN":
-            self.rnn = nn.RNN(emb_dim,hidden_size,num_layers,bidirectional=self.bidirectional,dropout=(dropout if num_layers>1 else 0))
-        elif self.cell_type == "GRU":
-            self.rnn = nn.GRU(emb_dim,hidden_size,num_layers,bidirectional=self.bidirectional,dropout=(dropout if num_layers>1 else 0))
+        # Store parameters
+        self.input_dimension = inp_dim
+        self.embed_dimension = emb_dim
+        self.hidden_dimension = hidden_size
+        self.layer_count = num_layers
+        self.is_bidirectional = bidirectional
+        self.rnn_type = cell_type
+        
+        # Create embedding layer and dropout layer
+        self.word_embedding = nn.Embedding(inp_dim, emb_dim)
+        self.regularization = nn.Dropout(dropout)
+        
+        # Calculate effective dropout based on layer count
+        effective_dropout = 0 if num_layers <= 1 else dropout
+        
+        # Initialize the appropriate RNN type
+        if self.rnn_type == "LSTM":
+            self.rnn_layer = nn.LSTM(
+                input_size=emb_dim,
+                hidden_size=hidden_size,
+                num_layers=num_layers,
+                bidirectional=bidirectional,
+                dropout=effective_dropout
+            )
+        elif self.rnn_type == "RNN":
+            self.rnn_layer = nn.RNN(
+                input_size=emb_dim,
+                hidden_size=hidden_size,
+                num_layers=num_layers,
+                bidirectional=bidirectional,
+                dropout=effective_dropout
+            )
+        elif self.rnn_type == "GRU":
+            self.rnn_layer = nn.GRU(
+                input_size=emb_dim,
+                hidden_size=hidden_size,
+                num_layers=num_layers,
+                bidirectional=bidirectional,
+                dropout=effective_dropout
+            )
 
-
-    def forward(self,x):
-
+    def forward(self, x):
         '''
             Defines the forward pass of the encoder.
 
@@ -324,22 +347,27 @@ class Encoder(nn.Module):
             - hidden (tensor): Hidden state tensor.
             - cell (tensor): Cell state tensor (only for LSTM).
         '''
-
-        embedding = self.dropout(self.embedding(x))
-        if self.cell_type == "LSTM":
-            input = embedding
-            outputs,(hidden,cell) = self.rnn(embedding)
-            embedding = embedding.permute(1,0,2)
+        # Generate embeddings and apply dropout
+        embedded_sequence = self.regularization(self.word_embedding(x))
+        
+        # Process through the RNN layer
+        if self.rnn_type == "LSTM":
+            # For LSTM, we get both hidden state and cell state
+            rnn_outputs, (final_hidden, final_cell) = self.rnn_layer(embedded_sequence)
+            # Transpose embedding for consistent dimensionality
+            embedded_sequence = embedded_sequence.permute(1, 0, 2)
+            return rnn_outputs, final_hidden, final_cell
         else:
-            input = embedding
-            outputs,hidden = self.rnn(embedding)
-            embedding = embedding.permute(1,0,2)
-            cell = None
-        return outputs,hidden,cell
-    
+            # For RNN and GRU, we only get hidden state
+            rnn_outputs, final_hidden = self.rnn_layer(embedded_sequence)
+            # Transpose embedding for consistent dimensionality  
+            embedded_sequence = embedded_sequence.permute(1, 0, 2)
+            # Return None for cell state to maintain interface consistency
+            return rnn_outputs, final_hidden, None
+
+
 class Decoder(nn.Module):
     def __init__(self, inp_dim, emb_dim, hidden_size, output_size, num_layers, bidirectional, cell_type, dropout):
-
         '''
             Initializes the Decoder class with specified parameters.
 
@@ -356,37 +384,68 @@ class Decoder(nn.Module):
             Returns:
             - None
         '''
-
-        super(Decoder,self).__init__()
-        self.inp_dim = inp_dim
-        self.embedding = nn.Embedding(inp_dim,emb_dim)
-        self.hidden_size = hidden_size
-        self.output_size = output_size
-        self.num_layers = num_layers
-        self.bidirectional = bidirectional
-        self.cell_type = cell_type
-        self.dropout = nn.Dropout(dropout)
-        self.num_directions = 2 if self.bidirectional else 1  
-
-        if self.cell_type == "LSTM":
-            self.cell = nn.LSTM((hidden_size * self.num_directions + emb_dim),hidden_size,num_layers,bidirectional=self.bidirectional, dropout=(dropout if num_layers>1 else 0))
-        elif self.cell_type == "RNN":
-            self.cell = nn.RNN((hidden_size * self.num_directions + emb_dim),hidden_size,num_layers,bidirectional=self.bidirectional,dropout=(dropout if num_layers>1 else 0))
-        elif self.cell_type == "GRU":
-            self.cell = nn.GRU((hidden_size * self.num_directions + emb_dim),hidden_size,num_layers,bidirectional=self.bidirectional,dropout=(dropout if num_layers>1 else 0))
+        # Initialize parent class
+        super().__init__()
         
-        self.attn_combine = nn.Linear(hidden_size * (self.num_directions + 1), 1)
-        self.fc = nn.Linear(self.num_directions * hidden_size, output_size)
-        self.hidden = hidden_size
-        self.weights = nn.Softmax(dim=0)
-        self.relu = nn.ReLU()
-        self.output = output_size
-        self.out = nn.Linear(hidden_size * self.num_directions, output_size)
-        self.softmax = nn.LogSoftmax(dim=1)
+        # Store configuration parameters
+        self.input_dimension = inp_dim
+        self.embed_dimension = emb_dim
+        self.hidden_dimension = hidden_size
+        self.vocab_size = output_size
+        self.layer_count = num_layers
+        self.is_bidirectional = bidirectional
+        self.rnn_type = cell_type
+        self.direction_factor = 2 if bidirectional else 1
+        
+        # Create layers
+        self.word_embedding = nn.Embedding(inp_dim, emb_dim)
+        self.regularization = nn.Dropout(dropout)
+        
+        # Effective dropout rate depends on layer count
+        effective_dropout = 0 if num_layers <= 1 else dropout
+        
+        # Calculate input size for RNN cell (includes embedding + context)
+        rnn_input_size = hidden_size * self.direction_factor + emb_dim
+        
+        # Initialize the RNN cell based on the specified type
+        if self.rnn_type == "LSTM":
+            self.rnn_cell = nn.LSTM(
+                input_size=rnn_input_size,
+                hidden_size=hidden_size,
+                num_layers=num_layers,
+                bidirectional=bidirectional,
+                dropout=effective_dropout
+            )
+        elif self.rnn_type == "RNN":
+            self.rnn_cell = nn.RNN(
+                input_size=rnn_input_size,
+                hidden_size=hidden_size,
+                num_layers=num_layers,
+                bidirectional=bidirectional,
+                dropout=effective_dropout
+            )
+        elif self.rnn_type == "GRU":
+            self.rnn_cell = nn.GRU(
+                input_size=rnn_input_size,
+                hidden_size=hidden_size,
+                num_layers=num_layers,
+                bidirectional=bidirectional,
+                dropout=effective_dropout
+            )
+        
+        # Attention mechanism components
+        self.attention_scorer = nn.Linear(hidden_size * (self.direction_factor + 1), 1)
+        
+        # Output projection
+        self.projection = nn.Linear(hidden_size * self.direction_factor, output_size)
+        
+        # Additional layers for processing
+        self.activation = nn.ReLU()
+        self.attention_normalizer = nn.Softmax(dim=0)
+        self.output_layer = nn.Linear(hidden_size * self.direction_factor, output_size)
+        self.log_softmax = nn.LogSoftmax(dim=1)
 
-
-    def forward(self,x,encoder_states,hidden,cell):
-
+    def forward(self, x, encoder_states, hidden, cell):
         '''
             Defines the forward pass of the decoder.
 
@@ -402,44 +461,61 @@ class Decoder(nn.Module):
             - cell (tensor): Cell state tensor (only for LSTM).
             - attention (tensor): Attention weights.
         '''
-
-        x = x.unsqueeze(0)
-        self.out = nn.Linear(self.hidden_size * self.num_directions, self.output_size)
-        embedding = self.dropout(self.embedding(x))
-        sequence_length = encoder_states.shape[0]
-        decoder_hidden = hidden
-        embedded = embedding.size(2)
-        hidden_reshaped = hidden.repeat(int(sequence_length / self.num_directions),1,1)
-        decoder_hidden = decoder_hidden.permute(1,0,2)
-        attn_combine = self.relu(self.attn_combine(torch.cat((hidden_reshaped,encoder_states),dim=2)))
-        decoder_hidden_reshaped = decoder_hidden.repeat(1,sequence_length,1)
-        attention = self.weights(attn_combine) 
-        attention = attention.permute(1,2,0)
-        embedded = embedding.size(2)
-        encoder_states = encoder_states.permute(1,0,2)
+        # Add sequence dimension if needed
+        x_reshaped = x.unsqueeze(0)
         
-        encoder_context = torch.bmm(attention,encoder_states).permute(1,0,2)
-        decoder_context = torch.cat((encoder_context,embedding),dim=2)
-        context = torch.bmm(attention,encoder_states).permute(1,0,2)
-        decoder_context = torch.cat((context,embedding),dim=2)
-        cell_input = torch.cat((context,embedding),dim=2)
-        embedded = embedding.size(1)
-
-        if self.cell_type == "RNN" or self.cell_type == "GRU":
-            outputs,hidden = self.cell(cell_input,hidden)
-            cell = None
-        else:
-            outputs,(hidden,cell) = self.cell(cell_input,(hidden,cell))
-
-        predictions = self.fc(outputs)
-        outputs = predictions.squeeze(0)
-        predictions = self.softmax(predictions[0])
-        return predictions, hidden, cell, attention
+        # Update output layer to ensure correct dimensions
+        self.output_layer = nn.Linear(self.hidden_dimension * self.direction_factor, self.vocab_size)
+        
+        # Generate embeddings with dropout
+        embeddings = self.regularization(self.word_embedding(x_reshaped))
+        
+        # Get sequence length from encoder states
+        seq_length = encoder_states.shape[0]
+        
+        # Create repeat of hidden state for attention calculation
+        hidden_expanded = hidden.repeat(int(seq_length / self.direction_factor), 1, 1)
+        
+        # Reorder dimensions for calculation
+        decoder_hidden_permuted = hidden.permute(1, 0, 2)
+        
+        # Calculate attention scores
+        attention_input = torch.cat((hidden_expanded, encoder_states), dim=2)
+        attention_energies = self.activation(self.attention_scorer(attention_input))
+        
+        # Create expanded hidden state for broadcast
+        decoder_hidden_expanded = decoder_hidden_permuted.repeat(1, seq_length, 1)
+        
+        # Normalize attention scores
+        attention_weights = self.attention_normalizer(attention_energies)
+        
+        # Reorder dimensions for matrix multiplication
+        attention_weights_permuted = attention_weights.permute(1, 2, 0)
+        encoder_states_permuted = encoder_states.permute(1, 0, 2)
+        
+        # Calculate context vector using attention weights
+        context_vector = torch.bmm(attention_weights_permuted, encoder_states_permuted).permute(1, 0, 2)
+        
+        # Combine context vector with input embeddings
+        rnn_input = torch.cat((context_vector, embeddings), dim=2)
+        
+        # Process through RNN cell
+        if self.rnn_type == "LSTM":
+            rnn_output, (new_hidden, new_cell) = self.rnn_cell(rnn_input, (hidden, cell))
+        else:  # RNN or GRU
+            rnn_output, new_hidden = self.rnn_cell(rnn_input, hidden)
+            new_cell = None
+        
+        # Generate predictions
+        logits = self.projection(rnn_output)
+        output_squeezed = logits.squeeze(0)
+        predictions = self.log_softmax(logits[0])
+        
+        return predictions, new_hidden, new_cell, attention_weights
 
 
 class Seq2Seq(nn.Module):
-    def __init__(self,encoder,decoder, vocab):
-
+    def __init__(self, encoder, decoder, vocab):
         '''
             Initializes the Seq2Seq model with an encoder, decoder, and vocabulary.
 
@@ -451,15 +527,15 @@ class Seq2Seq(nn.Module):
             Returns:
             - None
         '''
+        # Initialize parent class
+        super().__init__()
+        
+        # Store components
+        self.encoder_model = encoder
+        self.decoder_model = decoder
+        self.vocabulary = vocab
 
-        super(Seq2Seq,self).__init__()
-        self.encoder = encoder
-        self.decoder = decoder
-        self.vocab = vocab
-    
-
-    def forward(self,source,target,teacher_forcing_ratio=0.5):
-
+    def forward(self, source, target, teacher_forcing_ratio=0.5):
         '''
             Performs the forward pass of the Seq2Seq model.
 
@@ -471,31 +547,45 @@ class Seq2Seq(nn.Module):
             Returns:
             - outputs (tensor): Output predictions.
         '''
-
-        self.target_len = target.shape[0]
+        # Extract dimensions
+        target_length = target.shape[0]
         batch_size = source.shape[1]
-        target_vocab_size = len(self.vocab.out_lang_char_to_index)
-        input_length = batch_size * target_vocab_size
-        outputs = torch.zeros(self.target_len,batch_size,target_vocab_size).to(device)
-        encoder_states,hidden,cell = self.encoder(source)
+        vocab_size = len(self.vocabulary.out_lang_char_to_index)
         
-        x = target[0]
-        decoder_input = torch.full((1, batch_size), self.vocab.SOS_token_index, dtype=torch.long)
-        batch = x.size(0)
-        for t in range(1,self.target_len):
-            input = x
-            output,hidden,cell,_ = self.decoder(x,encoder_states,hidden,cell)
-            outputs[t] = output
-            input = output.argmax(1)
-            use_teacher_forcing = random.random() < teacher_forcing_ratio
-            input = target[t] if use_teacher_forcing else output.argmax(1)
-            predicted_sequence = output.argmax(1)
-            x = target[t] if use_teacher_forcing else predicted_sequence
-            batch = x.size(0)
-        return outputs
+        # Initialize output tensor
+        result_sequences = torch.zeros(target_length, batch_size, vocab_size).to(device)
+        
+        # Process source sequence through encoder
+        encoder_outputs, encoder_hidden, encoder_cell = self.encoder_model(source)
+        
+        # Initialize decoder input with first token from target
+        current_input = target[0]
+        
+        # Initialize decoder with SOS token
+        decoder_input = torch.full((1, batch_size), self.vocabulary.SOS_token_index, dtype=torch.long)
+        
+        # Generate sequence iteratively
+        for time_step in range(1, target_length):
+            # Process current token through decoder
+            decoder_output, encoder_hidden, encoder_cell, _ = self.decoder_model(
+                current_input, encoder_outputs, encoder_hidden, encoder_cell
+            )
+            
+            # Store predictions
+            result_sequences[time_step] = decoder_output
+            
+            # Get predicted token
+            predicted_token = decoder_output.argmax(1)
+            
+            # Apply teacher forcing based on probability
+            use_ground_truth = random.random() < teacher_forcing_ratio
+            
+            # Select next input: either from target (teacher forcing) or from prediction
+            current_input = target[time_step] if use_ground_truth else predicted_token
+        
+        return result_sequences
     
-    def calculate_accuracy(self,predicted_batch,target_batch):
-
+    def calculate_accuracy(self, predicted_batch, target_batch):
         '''
             Calculates the accuracy of the predicted batch.
 
@@ -507,18 +597,26 @@ class Seq2Seq(nn.Module):
             - correct (int): Number of correct predictions.
             - total (int): Total number of predictions.
         '''
-
-        correct,total=0,0
-        for i in range(target_batch.shape[0]):
-            predicted = self.vocab.index_to_word(self.language2,predicted_batch[i])
-            target = self.vocab.index_to_word(self.language2,target_batch[i])
-            total+=1
-            if predicted == target:
-                crct +=1
-        return correct, total
+        # Initialize counters
+        correct_count = 0
+        total_count = 0
+        
+        # Compare predictions with targets
+        for idx in range(target_batch.shape[0]):
+            # Convert indices to words
+            predicted_word = self.vocabulary.index_to_word(self.language2, predicted_batch[idx])
+            target_word = self.vocabulary.index_to_word(self.language2, target_batch[idx])
+            
+            # Increment total counter
+            total_count += 1
+            
+            # Check if prediction matches target
+            if predicted_word == target_word:
+                correct_count += 1
+                
+        return correct_count, total_count
     
     def prediction(self, source, attn_weights=False):
-
         '''
             Performs prediction using the Seq2Seq model.
 
@@ -530,43 +628,68 @@ class Seq2Seq(nn.Module):
             - outputs (tensor): Output predictions.
             - Attention_Weights (tensor): Attention weights if `attn_weights` is True, else None.
         '''
-
+        # Extract batch size
         batch_size = source.shape[1]
-        target = torch.zeros(1,batch_size).to(device).long()
-        target_vocab_size = len(self.vocab.out_lang_char_to_index)
-
-        outputs = torch.zeros(self.target_len,batch_size,target_vocab_size).to(device)
-        encoder_states,hidden,cell = self.encoder(source)
         
-        # Starting the decoder with the SOS token
-        x = target[0]
-        decoder_input = torch.full((1, batch_size), self.vocab.SOS_token_index, dtype=torch.long)
+        # Initialize target tensor
+        current_tokens = torch.zeros(1, batch_size).to(device).long()
+        
+        # Get vocabulary size
+        vocab_size = len(self.vocabulary.out_lang_char_to_index)
+        
+        # Initialize output tensor
+        predicted_sequences = torch.zeros(self.target_len, batch_size, vocab_size).to(device)
+        
+        # Process source sequence through encoder
+        encoder_outputs, encoder_hidden, encoder_cell = self.encoder_model(source)
+        
+        # Initialize decoder input with first token
+        current_input = current_tokens[0]
+        
+        # Initialize decoder with SOS token
+        decoder_input = torch.full((1, batch_size), self.vocabulary.SOS_token_index, dtype=torch.long)
+        
+        # Handle attention weights if requested
         if attn_weights:
-            # Attention_Weights -> (batch_size, target_len, target_len)
-            Attention_Weights = torch.zeros([batch_size,self.target_len,self.target_len]).to(device)
-            weights = torch.zeros([batch_size,self.target_len,self.target_len]).to(device)
-            for t in range(1,self.target_len):
-                input = x
-                output, hidden, cell, attention_weights = self.decoder(x,encoder_states,hidden,cell)
-                outputs[t] = output
-                input = output.argmax(1)
-                predicted_sequence = output.argmax(1)
-                target = predicted_sequence
-                x = predicted_sequence
-                Attention_Weights[:,:,t] = attention_weights.permute(1,0,2).squeeze()
+            # Initialize attention weight storage
+            attention_matrix = torch.zeros([batch_size, self.target_len, self.target_len]).to(device)
+            
+            # Generate sequence iteratively with attention tracking
+            for time_step in range(1, self.target_len):
+                # Process current token through decoder
+                decoder_output, encoder_hidden, encoder_cell, step_attention = self.decoder_model(
+                    current_input, encoder_outputs, encoder_hidden, encoder_cell
+                )
+                
+                # Store predictions
+                predicted_sequences[time_step] = decoder_output
+                
+                # Get predicted token for next input
+                predicted_token = decoder_output.argmax(1)
+                current_input = predicted_token
+                
+                # Store attention weights for this step
+                attention_matrix[:, :, time_step] = step_attention.permute(1, 0, 2).squeeze()
+                
         else:
-            Attention_Weights = None
-            # weights = torch.zeros([batch_size,self.target_len,self.target_len]).to(device)
-            for t in range(1,self.target_len):
-                input = x
-                output,hidden,cell,_ = self.decoder(x,encoder_states,hidden,cell)
-                outputs[t] = output
-                input = output.argmax(1)
-                predicted_sequence = output.argmax(1)
-                target = predicted_sequence
-                x = predicted_sequence
-        return outputs, Attention_Weights
-    
+            # No need to track attention weights
+            attention_matrix = None
+            
+            # Generate sequence iteratively without attention tracking
+            for time_step in range(1, self.target_len):
+                # Process current token through decoder
+                decoder_output, encoder_hidden, encoder_cell, _ = self.decoder_model(
+                    current_input, encoder_outputs, encoder_hidden, encoder_cell
+                )
+                
+                # Store predictions
+                predicted_sequences[time_step] = decoder_output
+                
+                # Get predicted token for next input
+                predicted_token = decoder_output.argmax(1)
+                current_input = predicted_token
+                
+        return predicted_sequences, attention_matrix   
 def _step_backward(model, criterion, optimizer,
                    src_seq, tgt_seq) -> float:
     """Single optimisation step; returns loss value."""
