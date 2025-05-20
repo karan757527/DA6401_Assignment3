@@ -1,0 +1,48 @@
+{
+  "os":  "macOS-15.3.2-arm64-arm-64bit",
+  "python":  "CPython 3.11.7",
+  "startedAt":  "2025-05-20T18:36:25.335180Z",
+  "args":  [
+    "--wandb_project",
+    "da6401_a1"
+  ],
+  "program":  "/Users/karanagrawal/Desktop/Sem 2/DL/DA6401_Assignment3/attention.py",
+  "codePath":  "attention.py",
+  "git":  {
+    "remote":  "git@github.com:karan757527/DA6401_Assignment3.git",
+    "commit":  "d8d79f7ba2b6bcdf065b0f03bcd4ed6fb3facf49"
+  },
+  "email":  "cs24m021@smail.iitm.ac.in",
+  "root":  "/Users/karanagrawal/Desktop/Sem 2/DL/DA6401_Assignment3",
+  "host":  "Karans-Laptop.local",
+  "executable":  "/opt/anaconda3/bin/python",
+  "codePathLocal":  "attention.py",
+  "cpu_count":  8,
+  "cpu_count_logical":  8,
+  "disk":  {
+    "/":  {
+      "total":  "245107195904",
+      "used":  "194970738688"
+    },
+    "/System/Volumes/Data":  {
+      "total":  "245107195904",
+      "used":  "194970738688"
+    }
+  },
+  "memory":  {
+    "total":  "8589934592"
+  },
+  "cpu":  {
+    "count":  8,
+    "countLogical":  8
+  },
+  "apple":  {
+    "name":  "Apple M2",
+    "ecpuCores":  4,
+    "pcpuCores":  4,
+    "gpuCores":  8,
+    "memoryGb":  8,
+    "swapTotalBytes":  "2147483648",
+    "ramTotalBytes":  "8589934592"
+  }
+}

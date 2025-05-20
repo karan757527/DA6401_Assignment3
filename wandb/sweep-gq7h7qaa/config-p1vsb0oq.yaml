@@ -1,0 +1,20 @@
+wandb_version: 1
+
+batch_size:
+  value: 16
+bidirectional:
+  value: true
+cell_type:
+  value: LSTM
+dropout:
+  value: 0.5
+emb_dim:
+  value: 64
+hidden_size:
+  value: 512
+learning_rate:
+  value: 0.001
+num_dec_layers:
+  value: 3
+num_enc_layers:
+  value: 3
